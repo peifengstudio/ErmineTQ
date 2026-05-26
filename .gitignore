@@ -1,0 +1,30 @@
+# Build output
+bin/
+*.exe
+
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dashboard build
+dashboard/dist/*
+!dashboard/dist/.gitkeep
+
+# mise local overrides
+.mise.local.toml

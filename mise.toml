@@ -1,0 +1,14 @@
+[tools]
+go = "1.25"
+
+[tasks.dev]
+run = "go run ./cmd/server"
+
+[tasks.test]
+run = "go test ./..."
+
+[tasks.build]
+run = "go build -o bin/erminetq ./cmd/server"
+
+[tasks.lint]
+run = "golangci-lint run ./..."
