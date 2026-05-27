@@ -1,0 +1,33 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Command to rebuild the binary on change
+  cmd = "go build -o ./tmp/erminetq ./cmd/server"
+  bin = "./tmp/erminetq"
+  # Args passed to the rebuilt binary.
+  # No need to pass -db here — the binary reads ERMINETQ_DB from the environment automatically.
+  args_bin = ["server"]
+  # Watch these directories for changes
+  include_dir = ["cmd", "internal"]
+  include_ext = ["go"]
+  # Ignore generated / test files
+  exclude_regex = ["_test\\.go$"]
+  exclude_dir  = ["bin", "tmp", "dashboard/dist"]
+  # Delay after a file change before rebuilding (ms)
+  delay = 500
+  # Kill the old process before starting the new one
+  send_interrupt = true
+  kill_delay     = "500ms"
+
+[log]
+  time = true
+
+[color]
+  build = "yellow"
+  runner = "green"
+  watcher = "cyan"
+  app = ""
+
+[misc]
+  clean_on_exit = true
