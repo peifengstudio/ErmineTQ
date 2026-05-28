@@ -9,26 +9,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/peifengstudio/erminetq/internal/config"
 	"github.com/peifengstudio/erminetq/internal/store"
 )
 
-// Build-time variables injected by -ldflags (see Makefile).
+// Build-time variables injected via -ldflags (see Makefile).
 var (
 	Version   = "dev"
 	Commit    = "none"
 	BuildTime = "unknown"
 )
-
-// envDB is the environment variable that sets the default database path.
-const envDB = "ERMINETQ_DB"
-
-// defaultDB returns the value of ERMINETQ_DB, falling back to "erminetq.db".
-func defaultDB() string {
-	if v := os.Getenv(envDB); v != "" {
-		return v
-	}
-	return "erminetq.db"
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -62,17 +52,18 @@ func run() error {
 
 // cmdServer opens the store, applies migrations, then blocks until SIGINT/SIGTERM.
 func cmdServer(args []string) error {
-	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	dbPath := fs.String("db", defaultDB(), fmt.Sprintf(
-		"path to SQLite database file (env: %s)", envDB,
-	))
-	if err := fs.Parse(args); err != nil {
+	cfg, dbPath, err := parseFlags("server", args)
+	if err != nil {
 		return err
 	}
 
-	slog.Info("ErmineTQ starting", "version", Version, "db", *dbPath)
+	slog.Info("ErmineTQ starting",
+		"version", Version,
+		"db", dbPath,
+		"global_limit", cfg.Limits.Global,
+	)
 
-	s, err := store.Open(*dbPath)
+	s, err := store.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
@@ -82,7 +73,7 @@ func cmdServer(args []string) error {
 		}
 	}()
 
-	slog.Info("database ready", "db", *dbPath)
+	slog.Info("database ready", "db", dbPath)
 
 	// TODO: wire up internal/queue, internal/api, internal/scheduler, internal/dashboard
 
@@ -96,19 +87,17 @@ func cmdServer(args []string) error {
 }
 
 // cmdMigrate applies pending migrations and exits.
-// Useful for CI pre-flight checks or container init containers.
+// Useful for CI pre-flight checks or container init steps.
 func cmdMigrate(args []string) error {
-	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
-	dbPath := fs.String("db", defaultDB(), fmt.Sprintf(
-		"path to SQLite database file (env: %s)", envDB,
-	))
-	if err := fs.Parse(args); err != nil {
+	cfg, dbPath, err := parseFlags("migrate", args)
+	if err != nil {
 		return err
 	}
+	_ = cfg // config will be used by later subsystems
 
-	slog.Info("applying migrations", "db", *dbPath)
+	slog.Info("applying migrations", "db", dbPath)
 
-	s, err := store.Open(*dbPath)
+	s, err := store.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
@@ -116,8 +105,46 @@ func cmdMigrate(args []string) error {
 		return fmt.Errorf("close store: %w", err)
 	}
 
-	slog.Info("migrations complete", "db", *dbPath)
+	slog.Info("migrations complete", "db", dbPath)
 	return nil
+}
+
+// parseFlags is shared by cmdServer and cmdMigrate.
+// It loads the config file, then applies the -db override if provided.
+//
+// DB path resolution order (highest priority first):
+//  1. -db flag (explicit override)
+//  2. ERMINETQ_DB environment variable
+//  3. db.path in the config file
+//  4. "erminetq.db" (compiled-in default)
+func parseFlags(cmd string, args []string) (*config.Config, string, error) {
+	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
+
+	configFlag := fs.String("config", "",
+		fmt.Sprintf("path to TOML config file (env: %s, default: %s)",
+			config.EnvConfig, config.DefaultConfigPath))
+
+	dbFlag := fs.String("db", "",
+		fmt.Sprintf("override database path — takes precedence over config and %s", config.EnvDB))
+
+	if err := fs.Parse(args); err != nil {
+		return nil, "", err
+	}
+
+	configPath := config.ConfigFilePath(*configFlag)
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("load config %q: %w", configPath, err)
+	}
+
+	// -db flag is the final override.
+	dbPath := cfg.DB.Path
+	if *dbFlag != "" {
+		dbPath = *dbFlag
+	}
+
+	return cfg, dbPath, nil
 }
 
 func usage() {
@@ -129,12 +156,15 @@ Usage:
 Commands:
   server    Start the ErmineTQ server (also applies migrations on startup)
   migrate   Apply pending database migrations and exit
-  version   Print version and exit
+  version   Print version information and exit
 
 Flags (server / migrate):
-  -db string
-        Path to SQLite database file.
-        Env: %s  (default: erminetq.db)
+  -config string
+        Path to TOML config file.
+        Env: %s  (default: %s)
 
-`, Version, envDB)
+  -db string
+        Override database path. Takes precedence over config file and %s.
+
+`, Version, config.EnvConfig, config.DefaultConfigPath, config.EnvDB)
 }

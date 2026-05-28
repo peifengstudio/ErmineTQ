@@ -1,0 +1,73 @@
+# erminetq.example.toml
+# Reference configuration for ErmineTQ v0.1.
+# Copy to erminetq.toml and adjust to your workload.
+#
+# Config file load order (highest priority first):
+#   1. -db / -config CLI flags
+#   2. ERMINETQ_DB / ERMINETQ_CONFIG environment variables
+#   3. Values in this file
+#   4. Compiled-in defaults
+
+# ── Database ──────────────────────────────────────────────────────────────────
+
+[db]
+# Path to the SQLite database file. Created on first run.
+# Override with ERMINETQ_DB env var or the -db CLI flag.
+path = "erminetq.db"
+
+# ── Execution Limits ──────────────────────────────────────────────────────────
+# Limits control how many tasks may run concurrently.
+#
+# Three scopes are checked before a task is dispatched to a worker:
+#
+#   global     — total running tasks across every queue
+#   queue      — running tasks inside one named queue
+#   task type  — running tasks of one specific type
+#
+# ALL applicable limits must have room before a task is started.
+# A limit of 0 at queue or task-type scope means "no limit at that scope"
+# (the global limit and any other applicable limit still apply).
+
+[limits]
+# Hard cap on total concurrently running tasks.
+# Must be >= 1. Default when not set: 128.
+global = 128
+
+# ── Queue Limits ──────────────────────────────────────────────────────────────
+# Define a [queues.<name>] section for each queue that needs its own cap.
+# Queues that are not listed here are unbounded (only global applies).
+
+[queues.default]
+limit = 32          # general-purpose work
+
+[queues.http]
+limit = 200         # outbound HTTP tasks; keep high, I/O-bound
+
+[queues.ollama]
+limit = 2           # GPU-bound; set to number of available GPUs
+
+[queues.data]
+limit = 4           # CPU-heavy data analysis
+
+# ── Task Type Limits ──────────────────────────────────────────────────────────
+# Define a [task_types.<name>] section for each type that needs its own cap.
+# Types not listed here are unbounded at task-type scope.
+#
+# queue is informational (documents which queue the type runs on).
+# limit applies on top of the queue limit for the same queue.
+
+[task_types.fetch_api]
+queue = "http"
+limit = 100         # high-concurrency API polling
+
+[task_types.crawl_page]
+queue = "http"
+limit = 50          # HTML crawls; more memory per task than fetch_api
+
+[task_types.ollama_generate]
+queue = "ollama"
+limit = 1           # single-threaded inference per GPU
+
+[task_types.analyze_data]
+queue = "data"
+limit = 4           # one per CPU core

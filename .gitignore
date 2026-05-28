@@ -9,6 +9,9 @@ tmp/
 *.db-shm
 data/
 
+# Local config (use erminetq.example.toml as the tracked template)
+erminetq.toml
+
 # Environment
 .env
 .env.local

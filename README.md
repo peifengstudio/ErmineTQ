@@ -29,11 +29,12 @@ git clone https://github.com/peifengstudio/erminetq
 cd erminetq
 make build
 
-# Run the server (creates erminetq.db in the current directory)
+# Run with defaults (creates erminetq.db in the current directory)
 ./bin/erminetq server
 
-# Or point it at a specific database
-ERMINETQ_DB=./data/myapp.db ./bin/erminetq server
+# Run with a config file
+cp erminetq.example.toml erminetq.toml
+./bin/erminetq server
 ```
 
 ```python
@@ -46,21 +47,80 @@ result  = client.wait(task_id)
 
 ---
 
-## Environment Variables
+## Configuration
+
+ErmineTQ is configured via a TOML file. Copy the annotated example to get started:
+
+```bash
+cp erminetq.example.toml erminetq.toml
+```
+
+By default ErmineTQ looks for `erminetq.toml` in the working directory.
+**The file is optional** — if it is absent, compiled-in defaults are used.
+
+### Config file structure
+
+```toml
+[db]
+path = "erminetq.db"        # SQLite file path
+
+[limits]
+global = 128                # max total concurrent tasks
+
+[queues.default]
+limit = 32                  # max concurrent tasks in this queue
+
+[queues.ollama]
+limit = 2                   # GPU-bound queue, keep low
+
+[task_types.ollama_generate]
+queue = "ollama"
+limit = 1                   # one inference job at a time
+```
+
+See [`erminetq.example.toml`](erminetq.example.toml) for the full reference with comments.
+
+### Execution limits
+
+ErmineTQ enforces three nested concurrency scopes. **All** applicable limits
+must have capacity before a task is dispatched:
+
+```
+global limit
+  └── queue limit        (if configured for that queue)
+        └── task-type limit   (if configured for that type)
+```
+
+A limit of `0` at queue or task-type scope means **unlimited at that scope**
+(global and any other applicable limit still apply).
+
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ERMINETQ_CONFIG` | `erminetq.toml` | Path to the TOML config file |
 | `ERMINETQ_DB` | `erminetq.db` | Path to the SQLite database file |
 
-The `-db` flag on every subcommand overrides `ERMINETQ_DB` when both are set.
+`ERMINETQ_DB` overrides `db.path` in the config file.
+
+### Override precedence
+
+Every setting follows the same priority chain (highest wins):
+
+```
+CLI flag  >  environment variable  >  config file  >  compiled-in default
+```
+
+Examples:
 
 ```bash
-# All three are equivalent:
-./bin/erminetq server
-ERMINETQ_DB=erminetq.db ./bin/erminetq server
-./bin/erminetq server -db erminetq.db
+# Use a non-default config file
+ERMINETQ_CONFIG=./config/prod.toml ./bin/erminetq server
 
-# Flag takes precedence over the env var:
+# Override the database path at runtime without editing the config file
+ERMINETQ_DB=./data/myapp.db ./bin/erminetq server
+
+# CLI flag takes precedence over everything
 ERMINETQ_DB=foo.db ./bin/erminetq server -db bar.db   # uses bar.db
 ```
 
@@ -72,12 +132,18 @@ ERMINETQ_DB=foo.db ./bin/erminetq server -db bar.db   # uses bar.db
 erminetq <command> [flags]
 
 Commands:
-  server    Start the ErmineTQ server (auto-applies migrations on startup)
+  server    Start the ErmineTQ server (also applies migrations on startup)
   migrate   Apply pending database migrations and exit
+  version   Print version information and exit
 
-Flags (both commands):
-  -db string   Path to SQLite database file
-               Env: ERMINETQ_DB  (default: erminetq.db)
+Flags (server / migrate):
+  -config string
+        Path to TOML config file.
+        Env: ERMINETQ_CONFIG  (default: erminetq.toml)
+
+  -db string
+        Override database path.
+        Takes precedence over config file and ERMINETQ_DB.
 ```
 
 ---
@@ -88,12 +154,15 @@ Flags (both commands):
 
 - Go 1.25+  (`mise install` if you use [mise](https://mise.jdx.dev))
 - `golangci-lint` for linting (optional)
+- `air` for hot-reload dev: `go install github.com/air-verse/air@latest`
 
 ### Common tasks
 
 ```bash
+make deps         # download all Go module dependencies
 make build        # compile → bin/erminetq
-make run          # go run (no compile step), respects ERMINETQ_DB
+make dev          # hot-reload server via air (requires air)
+make run          # run server once via go run
 make migrate      # apply migrations and exit
 make test         # run all tests
 make test-v       # verbose test output
@@ -107,10 +176,10 @@ make clean-db     # remove local *.db files
 make help         # list all targets
 ```
 
-Use `ERMINETQ_DB` with any make target:
+Use env vars with any make target:
 
 ```bash
-ERMINETQ_DB=./data/dev.db make run
+ERMINETQ_CONFIG=./config/dev.toml ERMINETQ_DB=./data/dev.db make run
 ERMINETQ_DB=./data/dev.db make migrate
 ```
 
@@ -153,6 +222,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for full design rationale.
 
 ```
 cmd/server/           main entry point — wires everything together
+internal/config/      TOML config loader and execution-limit types
 internal/store/       SQLite store layer — ALL state transitions go here
 internal/queue/       in-memory priority queue + worker pool
 internal/api/         HTTP JSON API handlers and types
@@ -161,6 +231,7 @@ internal/scheduler/   cron + interval scheduler
 internal/dashboard/   HTTP server + SSE broker + embedded static files
 dashboard/dist/       frontend build output (embedded into binary)
 docs/                 design documents
+erminetq.example.toml annotated reference configuration
 ```
 
 ---
