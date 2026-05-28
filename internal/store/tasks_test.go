@@ -127,7 +127,7 @@ func TestGetTask_RoundTrip(t *testing.T) {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	got, err := s.GetTask(ctx, created.ID)
+	got, _, _, err := s.GetTask(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
@@ -153,9 +153,83 @@ func TestGetTask_NotFound(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	_, err := s.GetTask(ctx, "nonexistent-id")
+	_, _, _, err := s.GetTask(ctx, "nonexistent-id")
 	if err != store.ErrNotFound {
 		t.Errorf("GetTask = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCreateTask_EmitsQueuedEvent(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	task, err := s.CreateTask(ctx, store.CreateTaskInput{Type: "job"})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	_, _, events, err := s.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	ev := events[0]
+	if ev.Event != store.TaskEventQueued {
+		t.Errorf("event type = %q, want %q", ev.Event, store.TaskEventQueued)
+	}
+	if ev.TaskID != task.ID {
+		t.Errorf("event TaskID = %q, want %q", ev.TaskID, task.ID)
+	}
+	if ev.ID == "" {
+		t.Error("event ID should not be empty")
+	}
+	if ev.CreatedAt.IsZero() {
+		t.Error("event CreatedAt should not be zero")
+	}
+}
+
+func TestGetTask_NoAttemptsOnCreation(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	task, err := s.CreateTask(ctx, store.CreateTaskInput{Type: "job"})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	_, attempts, _, err := s.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+
+	if len(attempts) != 0 {
+		t.Errorf("len(attempts) = %d, want 0 for a freshly created task", len(attempts))
+	}
+}
+
+func TestCreateTask_EventAndTaskInSameTransaction(t *testing.T) {
+	// Verify atomicity: both task row and queued event exist after a successful
+	// CreateTask (i.e. no partial state where the task exists without an event).
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	task, err := s.CreateTask(ctx, store.CreateTaskInput{Type: "atomic_job"})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	got, _, events, err := s.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got == nil {
+		t.Fatal("task should not be nil")
+	}
+	if len(events) == 0 {
+		t.Fatal("queued event must exist in the same transaction as the task row")
 	}
 }
 

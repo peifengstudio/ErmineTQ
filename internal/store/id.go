@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -31,6 +32,19 @@ func nullTime(t *time.Time) any {
 		return nil
 	}
 	return fmtDBTime(*t)
+}
+
+// parseNullDBTime parses a sql.NullString DATETIME column into *time.Time.
+// A NULL column (ns.Valid == false) returns nil without error.
+func parseNullDBTime(ns sql.NullString) (*time.Time, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	t, err := parseDBTime(ns.String)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 // parseDBTime parses a DATETIME string stored by SQLite.
