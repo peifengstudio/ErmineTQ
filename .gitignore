@@ -32,3 +32,6 @@ dashboard/dist/*
 
 # mise local overrides
 .mise.local.toml
+
+# Development
+TODO.md
