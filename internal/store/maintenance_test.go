@@ -291,10 +291,10 @@ func TestDueSchedules_ReturnsDue(t *testing.T) {
 
 	past := time.Now().UTC().Add(-time.Second)
 	sc, err := s.CreateSchedule(ctx, store.CreateScheduleInput{
-		TaskType:    "sync",
-		Enabled:     true,
+		TaskType:     "sync",
+		Enabled:      true,
 		IntervalSecs: ptr(60),
-		NextRunAt:   &past,
+		NextRunAt:    &past,
 	})
 	if err != nil {
 		t.Fatalf("CreateSchedule: %v", err)
@@ -318,10 +318,10 @@ func TestDueSchedules_SkipsFutureSchedule(t *testing.T) {
 
 	future := time.Now().UTC().Add(time.Hour)
 	if _, err := s.CreateSchedule(ctx, store.CreateScheduleInput{
-		TaskType:    "sync",
-		Enabled:     true,
+		TaskType:     "sync",
+		Enabled:      true,
 		IntervalSecs: ptr(3600),
-		NextRunAt:   &future,
+		NextRunAt:    &future,
 	}); err != nil {
 		t.Fatalf("CreateSchedule: %v", err)
 	}
@@ -341,10 +341,10 @@ func TestDueSchedules_SkipsDisabled(t *testing.T) {
 
 	past := time.Now().UTC().Add(-time.Second)
 	if _, err := s.CreateSchedule(ctx, store.CreateScheduleInput{
-		TaskType:    "sync",
-		Enabled:     false,
+		TaskType:     "sync",
+		Enabled:      false,
 		IntervalSecs: ptr(60),
-		NextRunAt:   &past,
+		NextRunAt:    &past,
 	}); err != nil {
 		t.Fatalf("CreateSchedule: %v", err)
 	}
@@ -377,10 +377,10 @@ func TestRecordScheduleRun_UpdatesTimestamps(t *testing.T) {
 
 	past := time.Now().UTC().Add(-time.Second)
 	sc, err := s.CreateSchedule(ctx, store.CreateScheduleInput{
-		TaskType:    "sync",
-		Enabled:     true,
+		TaskType:     "sync",
+		Enabled:      true,
 		IntervalSecs: ptr(60),
-		NextRunAt:   &past,
+		NextRunAt:    &past,
 	})
 	if err != nil {
 		t.Fatalf("CreateSchedule: %v", err)
@@ -421,10 +421,10 @@ func TestRecordScheduleRun_MakesScheduleNotDue(t *testing.T) {
 
 	past := time.Now().UTC().Add(-time.Second)
 	sc, err := s.CreateSchedule(ctx, store.CreateScheduleInput{
-		TaskType:    "sync",
-		Enabled:     true,
+		TaskType:     "sync",
+		Enabled:      true,
 		IntervalSecs: ptr(60),
-		NextRunAt:   &past,
+		NextRunAt:    &past,
 	})
 	if err != nil {
 		t.Fatalf("CreateSchedule: %v", err)

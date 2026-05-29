@@ -16,7 +16,7 @@ type WorkerFunc func(ctx context.Context, payload []byte) ([]byte, error)
 // It is safe for concurrent use: Register may be called from multiple
 // goroutines during startup, and Lookup is called from the worker pool.
 type Registry struct {
-	mu      sync.RWMutex
+	mu       sync.RWMutex
 	handlers map[string]WorkerFunc
 }
 
