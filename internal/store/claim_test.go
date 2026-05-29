@@ -81,7 +81,7 @@ func createTask(t *testing.T, s *store.Store, taskType string) *store.Task {
 func claim(t *testing.T, s *store.Store, workerID string, taskTypes []string, cfg *config.Config) *store.Task {
 	t.Helper()
 	ctx := context.Background()
-	got, err := s.ClaimTask(ctx, workerID, "default", taskTypes, cfg)
+	got, _, err := s.ClaimTask(ctx, workerID, "default", taskTypes, cfg)
 	if err != nil {
 		t.Fatalf("ClaimTask: %v", err)
 	}

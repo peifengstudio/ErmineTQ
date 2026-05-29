@@ -27,18 +27,21 @@ import (
 //  6. UPDATE workers: increment current_task_count, flip to 'busy' if full
 //  7. INSERT into task_events (event = started, detail = {attempt_id})
 //
-// Returns (nil, nil) when no eligible task is available — this is not an error.
+// Returns (nil, "", nil) when no eligible task is available — this is not an
+// error.  On success the returned string is the ID of the newly created attempt
+// row; callers need this to report the execution outcome.
 func (s *Store) ClaimTask(
 	ctx context.Context,
 	workerID, queue string,
 	taskTypes []string,
 	cfg *config.Config,
-) (*Task, error) {
+) (*Task, string, error) {
 	if len(taskTypes) == 0 {
-		return nil, nil
+		return nil, "", nil
 	}
 
 	var claimed *Task
+	var claimedAttemptID string
 
 	err := s.write(ctx, func(tx *sql.Tx) error {
 		now := fmtDBTime(time.Now().UTC())
@@ -133,6 +136,7 @@ func (s *Store) ClaimTask(
 
 		// ── Insert attempt ────────────────────────────────────────────────────
 		attemptID := NewID()
+		claimedAttemptID = attemptID
 		var prevMax int
 		if err := tx.QueryRow(
 			`SELECT COALESCE(MAX(attempt_num), 0) FROM attempts WHERE task_id = ?`,
@@ -174,7 +178,7 @@ func (s *Store) ClaimTask(
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return claimed, nil
+	return claimed, claimedAttemptID, nil
 }
