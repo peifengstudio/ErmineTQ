@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/peifengstudio/erminetq/internal/api"
+	"github.com/peifengstudio/erminetq/internal/bridge"
 	"github.com/peifengstudio/erminetq/internal/config"
+	"github.com/peifengstudio/erminetq/internal/queue"
 	"github.com/peifengstudio/erminetq/internal/store"
 )
 
@@ -78,6 +80,21 @@ func cmdServer(args []string) error {
 	}()
 
 	slog.Info("database ready", "db", dbPath)
+
+	// ── Task registry + Python Bridge ─────────────────────────────────────────
+	registry := queue.NewRegistry()
+	// TODO: register Go task handlers here, e.g.:
+	//   registry.Register("send_email", handlers.SendEmail)
+
+	if cfg.Bridge.Socket != "" {
+		bridgeClient := bridge.NewClient(cfg.Bridge.Socket)
+		defer bridgeClient.Close()
+		registry.SetBridge(bridgeClient, cfg.Bridge.TaskTypes)
+		slog.Info("bridge configured",
+			"socket", cfg.Bridge.Socket,
+			"types", cfg.Bridge.TaskTypes,
+		)
+	}
 
 	// SSE broker: bridges store events to HTTP clients.
 	broker := api.NewBroker()

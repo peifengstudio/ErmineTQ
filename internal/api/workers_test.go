@@ -92,6 +92,68 @@ func TestListWorkers(t *testing.T) {
 	}
 }
 
+func TestRegisterWorker_WithSocket(t *testing.T) {
+	sock := "/tmp/bridge.sock"
+	okWorker := &store.Worker{
+		ID:         "w2",
+		Type:       store.WorkerTypePython,
+		TaskTypes:  []string{"analyze_data"},
+		Queue:      "data",
+		Status:     store.WorkerStatusIdle,
+		StartedAt:  time.Now(),
+		SocketPath: &sock,
+	}
+
+	var capturedInput store.CreateWorkerInput
+	ms := &mockStore{
+		createWorkerFn: func(_ context.Context, in store.CreateWorkerInput) (*store.Worker, error) {
+			capturedInput = in
+			return okWorker, nil
+		},
+	}
+	mux := http.NewServeMux()
+	newTestHandler(ms).Register(mux)
+
+	w := postJSON(t, mux, "/api/workers/register", map[string]any{
+		"type":       "python",
+		"task_types": []string{"analyze_data"},
+		"queue":      "data",
+		"socket":     "/tmp/bridge.sock",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("got %d — body: %s", w.Code, w.Body)
+	}
+	if capturedInput.SocketPath == nil || *capturedInput.SocketPath != sock {
+		t.Errorf("SocketPath = %v, want %q", capturedInput.SocketPath, sock)
+	}
+}
+
+func TestRegisterWorker_NoSocket(t *testing.T) {
+	// Go workers omit socket; SocketPath must be nil in the store call.
+	var capturedInput store.CreateWorkerInput
+	ms := &mockStore{
+		createWorkerFn: func(_ context.Context, in store.CreateWorkerInput) (*store.Worker, error) {
+			capturedInput = in
+			return &store.Worker{
+				ID: "w3", Type: store.WorkerTypeGo, TaskTypes: []string{},
+				Queue: "default", Status: store.WorkerStatusIdle, StartedAt: time.Now(),
+			}, nil
+		},
+	}
+	mux := http.NewServeMux()
+	newTestHandler(ms).Register(mux)
+
+	w := postJSON(t, mux, "/api/workers/register", map[string]any{
+		"type": "go",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("got %d — body: %s", w.Code, w.Body)
+	}
+	if capturedInput.SocketPath != nil {
+		t.Errorf("SocketPath should be nil when socket field is absent, got %q", *capturedInput.SocketPath)
+	}
+}
+
 func TestListWorkersEmpty(t *testing.T) {
 	ms := &mockStore{
 		listWorkersFn: func(_ context.Context) ([]*store.Worker, error) { return nil, nil },

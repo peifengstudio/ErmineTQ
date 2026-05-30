@@ -36,10 +36,6 @@ type PoolConfig struct {
 	// caused by context cancellation.  Nil means errors are silently discarded.
 	// Useful in tests and for structured logging in the server layer.
 	OnError func(err error)
-
-	// Bridge is reserved for Phase 5 Python Bridge integration.
-	// Leave nil for pure-Go worker pools.
-	// Bridge *bridge.Client
 }
 
 // Pool manages Concurrency polling goroutines that each independently run

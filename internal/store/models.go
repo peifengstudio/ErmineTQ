@@ -125,6 +125,7 @@ type Worker struct {
 	Status           WorkerStatus
 	StartedAt        time.Time
 	HeartbeatAt      *time.Time
+	SocketPath       *string // nil for Go workers; Unix socket path for Python Bridge workers
 }
 
 // ── Schedule ──────────────────────────────────────────────────────────────────

@@ -15,6 +15,19 @@
 # Override with ERMINETQ_DB env var or the -db CLI flag.
 path = "erminetq.db"
 
+# ── Python Bridge ─────────────────────────────────────────────────────────────
+# Optional. Remove or leave socket empty to disable the Python Bridge.
+# The bridge allows Python processes to register as workers and receive tasks
+# over a Unix domain socket.
+
+[bridge]
+# Unix domain socket the Python Bridge server listens on.
+socket = "/tmp/erminetq_bridge.sock"
+
+# Task types that are routed to the Python Bridge.
+# v0.1: static list; future versions will auto-discover from the bridge process.
+task_types = ["analyze_data", "train_model"]
+
 # ── Execution Limits ──────────────────────────────────────────────────────────
 # Limits control how many tasks may run concurrently.
 #

@@ -1,14 +1,17 @@
 package queue_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/peifengstudio/erminetq/internal/bridge"
 	"github.com/peifengstudio/erminetq/internal/config"
 	"github.com/peifengstudio/erminetq/internal/queue"
 	"github.com/peifengstudio/erminetq/internal/store"
@@ -432,6 +435,129 @@ func TestRunOnce_SucceedAttemptError(t *testing.T) {
 	}
 }
 
+// ── Bridge dispatch via RunOnce ────────────────────────────────────────────────
+
+// startSuccessBridge starts a Unix socket server that always returns success.
+func startSuccessBridge(t *testing.T, resultJSON string) string {
+	t.Helper()
+	sockPath := shortSock(t, "wb.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("bridge listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				sc := bufio.NewScanner(c)
+				for sc.Scan() {
+					resp, _ := json.Marshal(map[string]json.RawMessage{
+						"result": json.RawMessage(resultJSON),
+					})
+					resp = append(resp, '\n')
+					_, _ = c.Write(resp)
+				}
+			}(conn)
+		}
+	}()
+	return sockPath
+}
+
+// newBridgeCfg builds a RunConfig where "py_job" is routed to a bridge client.
+func newBridgeCfg(ms *mockStore, sockPath string) queue.RunConfig {
+	r := queue.NewRegistry()
+	c := bridge.NewClient(sockPath)
+	r.SetBridge(c, []string{"py_job"})
+	return queue.RunConfig{
+		Store:             ms,
+		Registry:          r,
+		WorkerID:          "w-bridge",
+		Queue:             "default",
+		Config:            unlimitedConfig(),
+		HeartbeatInterval: time.Hour,
+	}
+}
+
+func TestRunOnce_BridgeType_Success(t *testing.T) {
+	wantResult := `{"rows":42}`
+	sockPath := startSuccessBridge(t, wantResult)
+
+	ms := &mockStore{
+		claimTask: func() (*store.Task, string, error) {
+			return &store.Task{
+				ID: "t-bridge", Type: "py_job", Payload: []byte(`{}`),
+			}, "attempt-bridge", nil
+		},
+	}
+	cfg := newBridgeCfg(ms, sockPath)
+
+	got, err := queue.RunOnce(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if !got {
+		t.Error("got=false, want true")
+	}
+	if ms.succeededCalls != 1 {
+		t.Errorf("SucceedAttempt called %d times, want 1", ms.succeededCalls)
+	}
+	if string(ms.lastResult) != wantResult {
+		t.Errorf("result = %q, want %q", ms.lastResult, wantResult)
+	}
+}
+
+func TestRunOnce_BridgeType_Error(t *testing.T) {
+	sockPath := shortSock(t, "eb.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				sc := bufio.NewScanner(c)
+				for sc.Scan() {
+					resp, _ := json.Marshal(map[string]string{"error": "python crashed"})
+					resp = append(resp, '\n')
+					_, _ = c.Write(resp)
+				}
+			}(conn)
+		}
+	}()
+
+	ms := &mockStore{
+		claimTask: func() (*store.Task, string, error) {
+			return &store.Task{ID: "t-err", Type: "py_job", Payload: []byte(`{}`)},
+				"attempt-err", nil
+		},
+	}
+	cfg := newBridgeCfg(ms, sockPath)
+
+	got, err := queue.RunOnce(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("RunOnce infrastructure error: %v", err)
+	}
+	if !got {
+		t.Error("got=false, want true (failure is handled, not infra error)")
+	}
+	if ms.failedCalls != 1 {
+		t.Errorf("FailAttempt called %d times, want 1", ms.failedCalls)
+	}
+	if ms.lastFailMsg != "python crashed" {
+		t.Errorf("fail message = %q, want \"python crashed\"", ms.lastFailMsg)
+	}
+}
 func TestRunOnce_FailAttemptError(t *testing.T) {
 	storeErr := errors.New("write timeout")
 	ms := &mockStore{

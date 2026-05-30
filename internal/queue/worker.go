@@ -56,21 +56,11 @@ func RunOnce(ctx context.Context, cfg RunConfig) (bool, error) {
 		return false, nil // queue empty or all limits saturated
 	}
 
-	// ── 2. Resolve handler ────────────────────────────────────────────────────
-	fn, ok := cfg.Registry.Lookup(task.Type)
-	if !ok {
-		// Should never happen: ClaimTask only returns tasks whose type is in
-		// the list we supplied.  Handle it defensively.
-		_ = cfg.Store.FailAttempt(context.Background(), attemptID,
-			"no handler registered for type "+task.Type)
-		return false, fmt.Errorf("queue: no handler for task type %q", task.Type)
-	}
-
-	// ── 3. Build execution context (respects timeout_secs + parent cancel) ────
+	// ── 2. Build execution context (respects timeout_secs + parent cancel) ────
 	execCtx, execCancel := buildExecCtx(ctx, task.TimeoutSecs)
 	defer execCancel()
 
-	// ── 4. Heartbeat goroutine ─────────────────────────────────────────────────
+	// ── 3. Heartbeat goroutine ─────────────────────────────────────────────────
 	// Uses its own cancel so we can stop it independently of execCtx.
 	hbCtx, hbCancel := context.WithCancel(context.Background())
 	hbDone := make(chan struct{})
@@ -90,15 +80,17 @@ func RunOnce(ctx context.Context, cfg RunConfig) (bool, error) {
 		}
 	}()
 
-	// ── 5. Execute (with panic recovery) ─────────────────────────────────────
-	result, execErr := runWithRecovery(execCtx, fn, task.Payload)
+	// ── 4. Execute ────────────────────────────────────────────────────────────
+	// Dispatch handles both Go WorkerFuncs and Python Bridge calls, and
+	// converts panics to errors internally.
+	result, execErr := cfg.Registry.Dispatch(execCtx, task)
 
 	// Stop heartbeat before touching the store so there is no concurrent
 	// UpdateHeartbeat racing against SucceedAttempt / FailAttempt.
 	hbCancel()
 	<-hbDone
 
-	// ── 6. Report outcome ─────────────────────────────────────────────────────
+	// ── 5. Report outcome ─────────────────────────────────────────────────────
 	// Always use a fresh background context here: the parent may already be
 	// cancelled (halt signal), but we still need to write the outcome.
 	outcomeCtx := context.Background()
@@ -136,16 +128,4 @@ func buildExecCtx(parent context.Context, timeoutSecs *int) (context.Context, co
 		return context.WithTimeout(parent, time.Duration(*timeoutSecs)*time.Second)
 	}
 	return context.WithCancel(parent)
-}
-
-// runWithRecovery calls fn and converts any panic into a returned error.
-// This prevents a misbehaving WorkerFunc from crashing the whole process.
-func runWithRecovery(ctx context.Context, fn WorkerFunc, payload []byte) (result []byte, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("panic: %v", r)
-			result = nil
-		}
-	}()
-	return fn(ctx, payload)
 }

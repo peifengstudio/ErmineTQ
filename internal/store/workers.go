@@ -14,8 +14,9 @@ import (
 type CreateWorkerInput struct {
 	Type        WorkerType
 	TaskTypes   []string
-	Queue       string // "" → "default"
-	Concurrency int    // ≤0 → 1
+	Queue       string  // "" → "default"
+	Concurrency int     // ≤0 → 1
+	SocketPath  *string // nil for Go workers; set for Python Bridge workers
 }
 
 // CreateWorker inserts a new worker with status "idle".
@@ -30,6 +31,7 @@ func (s *Store) CreateWorker(ctx context.Context, in CreateWorkerInput) (*Worker
 		Status:           WorkerStatusIdle,
 		StartedAt:        time.Now().UTC(),
 		HeartbeatAt:      nil,
+		SocketPath:       in.SocketPath,
 	}
 	if w.Queue == "" {
 		w.Queue = "default"
@@ -49,11 +51,13 @@ func (s *Store) CreateWorker(ctx context.Context, in CreateWorkerInput) (*Worker
 	err = s.write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
 			INSERT INTO workers
-				(id, type, task_types, queue, concurrency, current_task_count, status, started_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				(id, type, task_types, queue, concurrency, current_task_count,
+				 status, started_at, socket_path)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			w.ID, string(w.Type), string(taskTypesJSON),
 			w.Queue, w.Concurrency, w.CurrentTaskCount,
 			string(w.Status), fmtDBTime(w.StartedAt),
+			w.SocketPath,
 		)
 		return err
 	})
@@ -68,7 +72,7 @@ func (s *Store) CreateWorker(ctx context.Context, in CreateWorkerInput) (*Worker
 func (s *Store) GetWorker(ctx context.Context, id string) (*Worker, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, type, task_types, queue, concurrency, current_task_count,
-		       status, started_at, heartbeat_at
+		       status, started_at, heartbeat_at, socket_path
 		FROM workers
 		WHERE id = ?`, id)
 	w, err := scanWorker(row.Scan)
@@ -85,7 +89,7 @@ func (s *Store) GetWorker(ctx context.Context, id string) (*Worker, error) {
 func (s *Store) ListWorkers(ctx context.Context) ([]*Worker, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, type, task_types, queue, concurrency, current_task_count,
-		       status, started_at, heartbeat_at
+		       status, started_at, heartbeat_at, socket_path
 		FROM workers
 		ORDER BY started_at ASC`)
 	if err != nil {
@@ -105,6 +109,7 @@ func (s *Store) ListWorkers(ctx context.Context) ([]*Worker, error) {
 }
 
 // scanWorker reads one row from the workers table into a Worker.
+// Column order must match SELECT lists in GetWorker and ListWorkers.
 func scanWorker(scan func(...any) error) (*Worker, error) {
 	var (
 		w            Worker
@@ -113,11 +118,12 @@ func scanWorker(scan func(...any) error) (*Worker, error) {
 		status       string
 		startedAt    string
 		heartbeatAt  sql.NullString
+		socketPath   sql.NullString
 	)
 	if err := scan(
 		&w.ID, &workerType, &taskTypesRaw,
 		&w.Queue, &w.Concurrency, &w.CurrentTaskCount,
-		&status, &startedAt, &heartbeatAt,
+		&status, &startedAt, &heartbeatAt, &socketPath,
 	); err != nil {
 		return nil, err
 	}
@@ -139,6 +145,9 @@ func scanWorker(scan func(...any) error) (*Worker, error) {
 			return nil, fmt.Errorf("heartbeat_at: %w", err)
 		}
 		w.HeartbeatAt = &t
+	}
+	if socketPath.Valid {
+		w.SocketPath = &socketPath.String
 	}
 	return &w, nil
 }

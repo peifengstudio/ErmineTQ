@@ -12,6 +12,7 @@ type registerWorkerRequest struct {
 	TaskTypes   []string         `json:"task_types"`
 	Queue       string           `json:"queue"`
 	Concurrency int              `json:"concurrency"`
+	Socket      string           `json:"socket"` // Unix socket path; required for type=python
 }
 
 func (h *Handler) RegisterWorker(w http.ResponseWriter, r *http.Request) {
@@ -25,12 +26,17 @@ func (h *Handler) RegisterWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	worker, err := h.store.CreateWorker(r.Context(), store.CreateWorkerInput{
+	in := store.CreateWorkerInput{
 		Type:        req.Type,
 		TaskTypes:   req.TaskTypes,
 		Queue:       req.Queue,
 		Concurrency: req.Concurrency,
-	})
+	}
+	if req.Socket != "" {
+		in.SocketPath = &req.Socket
+	}
+
+	worker, err := h.store.CreateWorker(r.Context(), in)
 	if err != nil {
 		writeError(w, err)
 		return
