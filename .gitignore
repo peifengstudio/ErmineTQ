@@ -2,6 +2,7 @@
 bin/
 tmp/
 *.exe
+/server
 
 # SQLite database files
 *.db
@@ -30,8 +31,19 @@ Thumbs.db
 dashboard/dist/*
 !dashboard/dist/.gitkeep
 
+# Example output files (keep the .gitkeep placeholder)
+examples/output/*
+!examples/output/.gitkeep
+
 # mise local overrides
 .mise.local.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+examples/python/uv.lock
 
 # Development
 TODO.md

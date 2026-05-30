@@ -89,6 +89,39 @@ fmt: ## Format all Go source files
 tidy: ## Tidy go.mod and go.sum
 	go mod tidy
 
+# ── Examples ──────────────────────────────────────────────────────────────────
+
+# Examples — all target the dev server started by `make dev` (:8080).
+#
+# Go-only example:
+#   Terminal 1: make dev
+#   Terminal 2: make example-submit
+#
+# Python Bridge example:
+#   Terminal 1: make dev
+#   Terminal 2: make example-bridge
+#   Terminal 3: make example-py-submit
+
+EXAMPLE_SERVER ?= http://localhost:8080
+
+.PHONY: example-submit
+example-submit: ## Submit Go example tasks to the dev server (make dev must be running)
+	@curl -sf $(EXAMPLE_SERVER)/api/workers > /dev/null 2>&1 || \
+	  { echo "✗ server not running — start it first: make dev"; exit 1; }
+	go run ./examples/go/submit -addr $(EXAMPLE_SERVER)
+
+.PHONY: example-bridge
+example-bridge: ## Start the Python Bridge against the dev server (make dev must be running)
+	@curl -sf $(EXAMPLE_SERVER)/api/workers > /dev/null 2>&1 || \
+	  { echo "✗ server not running — start it first: make dev"; exit 1; }
+	cd examples/python && ERMINETQ_URL=$(EXAMPLE_SERVER) uv run python bridge/main.py
+
+.PHONY: example-py-submit
+example-py-submit: ## Submit Python Bridge tasks to the dev server
+	@curl -sf $(EXAMPLE_SERVER)/api/workers > /dev/null 2>&1 || \
+	  { echo "✗ server not running — start it first: make dev"; exit 1; }
+	cd examples/python && uv run python submit.py --addr $(EXAMPLE_SERVER)
+
 # ── Clean ──────────────────────────────────────────────────────────────────────
 
 .PHONY: clean

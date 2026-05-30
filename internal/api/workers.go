@@ -41,6 +41,15 @@ func (h *Handler) RegisterWorker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+
+	// If this is a Python Bridge, notify the worker pool so it can start
+	// claiming python task types via the registered socket.
+	if req.Type == store.WorkerTypePython &&
+		req.Socket != "" &&
+		h.onBridgeRegister != nil {
+		h.onBridgeRegister(req.Socket, req.TaskTypes)
+	}
+
 	writeJSON(w, http.StatusCreated, worker)
 }
 

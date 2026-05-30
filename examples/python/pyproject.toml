@@ -1,0 +1,9 @@
+[project]
+name = "erminetq-examples"
+version = "0.1.0"
+description = "ErmineTQ Python Bridge examples"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+]
+

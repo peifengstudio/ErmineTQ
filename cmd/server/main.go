@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/peifengstudio/erminetq/examples/go/handlers"
 	"github.com/peifengstudio/erminetq/internal/api"
 	"github.com/peifengstudio/erminetq/internal/bridge"
 	"github.com/peifengstudio/erminetq/internal/config"
 	"github.com/peifengstudio/erminetq/internal/queue"
+	"github.com/peifengstudio/erminetq/internal/scheduler"
 	"github.com/peifengstudio/erminetq/internal/store"
 )
 
@@ -83,8 +85,10 @@ func cmdServer(args []string) error {
 
 	// ── Task registry + Python Bridge ─────────────────────────────────────────
 	registry := queue.NewRegistry()
-	// TODO: register Go task handlers here, e.g.:
-	//   registry.Register("send_email", handlers.SendEmail)
+
+	// Register built-in example handlers.  Call registry.Register with the same
+	// task type after this line to override any individual handler.
+	handlers.RegisterDefaults(registry)
 
 	if cfg.Bridge.Socket != "" {
 		bridgeClient := bridge.NewClient(cfg.Bridge.Socket)
@@ -96,7 +100,7 @@ func cmdServer(args []string) error {
 		)
 	}
 
-	// SSE broker: bridges store events to HTTP clients.
+	// ── SSE broker ────────────────────────────────────────────────────────────
 	broker := api.NewBroker()
 	s.SetEventSink(broker)
 
@@ -105,8 +109,46 @@ func cmdServer(args []string) error {
 
 	broker.Start(ctx)
 
-	// HTTP handler + router.
+	// ── Worker pool ───────────────────────────────────────────────────────────
+	pool, err := queue.NewPool(ctx, queue.PoolConfig{
+		Store:        s,
+		Registry:     registry,
+		Config:       cfg,
+		Queue:        "default",
+		Concurrency:  cfg.Limits.Global,
+		PollInterval: 300 * time.Millisecond,
+		OnError: func(err error) {
+			slog.Warn("worker pool error", "err", err)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create worker pool: %w", err)
+	}
+	pool.Start(ctx)
+
+	// ── Scheduler (retry + heartbeat + cron) ──────────────────────────────────
+	sched := scheduler.New(s, scheduler.Config{
+		OnError: func(err error) {
+			slog.Warn("scheduler error", "err", err)
+		},
+	})
+	sched.Start(ctx)
+
+	// ── HTTP API ──────────────────────────────────────────────────────────────
 	handler := api.NewHandler(s, broker)
+
+	// When a Python Bridge calls POST /api/workers/register, automatically
+	// wire its socket into the registry so the worker pool starts claiming
+	// python task types on the next poll cycle.
+	handler.SetBridgeRegistrar(func(socketPath string, taskTypes []string) {
+		bc := bridge.NewClient(socketPath)
+		registry.SetBridge(bc, taskTypes)
+		slog.Info("python bridge connected",
+			"socket", socketPath,
+			"types", taskTypes,
+		)
+	})
+
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
@@ -114,19 +156,25 @@ func cmdServer(args []string) error {
 	if err := srv.Start(); err != nil {
 		return fmt.Errorf("start http server: %w", err)
 	}
-	slog.Info("server running", "addr", addr)
+	slog.Info("server running",
+		"addr", addr,
+		"workers", cfg.Limits.Global,
+		"task_types", registry.TaskTypes(),
+	)
 
 	<-ctx.Done()
 	slog.Info("shutting down...")
-
-	// Wait for the broker fan-out goroutine to drain (ctx already cancelled above).
-	broker.Wait()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("http shutdown", "err", err)
 	}
+
+	// Shutdown order: stop accepting new work → drain scheduler → drain pool → drain SSE.
+	sched.Wait()
+	pool.Wait()
+	broker.Wait()
 	return nil
 }
 
