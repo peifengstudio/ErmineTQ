@@ -5,10 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/peifengstudio/erminetq/internal/api"
 	"github.com/peifengstudio/erminetq/internal/config"
 	"github.com/peifengstudio/erminetq/internal/store"
 )
@@ -52,7 +55,7 @@ func run() error {
 
 // cmdServer opens the store, applies migrations, then blocks until SIGINT/SIGTERM.
 func cmdServer(args []string) error {
-	cfg, dbPath, err := parseFlags("server", args)
+	cfg, dbPath, addr, err := parseServerFlags(args)
 	if err != nil {
 		return err
 	}
@@ -60,6 +63,7 @@ func cmdServer(args []string) error {
 	slog.Info("ErmineTQ starting",
 		"version", Version,
 		"db", dbPath,
+		"addr", addr,
 		"global_limit", cfg.Limits.Global,
 	)
 
@@ -75,21 +79,44 @@ func cmdServer(args []string) error {
 
 	slog.Info("database ready", "db", dbPath)
 
-	// TODO: wire up internal/queue, internal/api, internal/scheduler, internal/dashboard
+	// SSE broker: bridges store events to HTTP clients.
+	broker := api.NewBroker()
+	s.SetEventSink(broker)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("server running — press Ctrl+C to stop")
+	broker.Start(ctx)
+
+	// HTTP handler + router.
+	handler := api.NewHandler(s, broker)
+	mux := http.NewServeMux()
+	handler.Register(mux)
+
+	srv := api.NewServer(addr, mux)
+	if err := srv.Start(); err != nil {
+		return fmt.Errorf("start http server: %w", err)
+	}
+	slog.Info("server running", "addr", addr)
+
 	<-ctx.Done()
 	slog.Info("shutting down...")
+
+	// Wait for the broker fan-out goroutine to drain (ctx already cancelled above).
+	broker.Wait()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("http shutdown", "err", err)
+	}
 	return nil
 }
 
 // cmdMigrate applies pending migrations and exits.
 // Useful for CI pre-flight checks or container init steps.
 func cmdMigrate(args []string) error {
-	cfg, dbPath, err := parseFlags("migrate", args)
+	cfg, dbPath, err := parseMigrateFlags(args)
 	if err != nil {
 		return err
 	}
@@ -109,41 +136,56 @@ func cmdMigrate(args []string) error {
 	return nil
 }
 
-// parseFlags is shared by cmdServer and cmdMigrate.
-// It loads the config file, then applies the -db override if provided.
-//
-// DB path resolution order (highest priority first):
-//  1. -db flag (explicit override)
-//  2. ERMINETQ_DB environment variable
-//  3. db.path in the config file
-//  4. "erminetq.db" (compiled-in default)
-func parseFlags(cmd string, args []string) (*config.Config, string, error) {
-	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
+// parseServerFlags parses flags for the "server" subcommand.
+// Returns config, dbPath, httpAddr.
+func parseServerFlags(args []string) (*config.Config, string, string, error) {
+	fs := flag.NewFlagSet("server", flag.ExitOnError)
 
 	configFlag := fs.String("config", "",
 		fmt.Sprintf("path to TOML config file (env: %s, default: %s)",
 			config.EnvConfig, config.DefaultConfigPath))
+	dbFlag := fs.String("db", "",
+		fmt.Sprintf("override database path — takes precedence over config and %s", config.EnvDB))
+	addrFlag := fs.String("addr", ":8080", "HTTP listen address")
 
+	if err := fs.Parse(args); err != nil {
+		return nil, "", "", err
+	}
+
+	cfg, dbPath, err := loadConfig(*configFlag, *dbFlag)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return cfg, dbPath, *addrFlag, nil
+}
+
+// parseMigrateFlags parses flags for the "migrate" subcommand.
+func parseMigrateFlags(args []string) (*config.Config, string, error) {
+	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
+
+	configFlag := fs.String("config", "",
+		fmt.Sprintf("path to TOML config file (env: %s, default: %s)",
+			config.EnvConfig, config.DefaultConfigPath))
 	dbFlag := fs.String("db", "",
 		fmt.Sprintf("override database path — takes precedence over config and %s", config.EnvDB))
 
 	if err := fs.Parse(args); err != nil {
 		return nil, "", err
 	}
+	return loadConfig(*configFlag, *dbFlag)
+}
 
-	configPath := config.ConfigFilePath(*configFlag)
-
+// loadConfig loads and returns the config, applying the -db flag override.
+func loadConfig(configFlagVal, dbFlagVal string) (*config.Config, string, error) {
+	configPath := config.ConfigFilePath(configFlagVal)
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("load config %q: %w", configPath, err)
 	}
-
-	// -db flag is the final override.
 	dbPath := cfg.DB.Path
-	if *dbFlag != "" {
-		dbPath = *dbFlag
+	if dbFlagVal != "" {
+		dbPath = dbFlagVal
 	}
-
 	return cfg, dbPath, nil
 }
 

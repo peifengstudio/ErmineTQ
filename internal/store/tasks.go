@@ -80,6 +80,7 @@ func (s *Store) CreateTask(ctx context.Context, in CreateTaskInput) (*Task, erro
 	if err != nil {
 		return nil, fmt.Errorf("CreateTask: %w", err)
 	}
+	s.emit(SSEEvent{TaskID: t.ID, Event: TaskEventQueued})
 	return t, nil
 }
 

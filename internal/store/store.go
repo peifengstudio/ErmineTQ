@@ -3,12 +3,33 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	_ "modernc.org/sqlite" // register the "sqlite" driver
 )
+
+// ── SSE event types ───────────────────────────────────────────────────────────
+
+// SSEEvent is the payload pushed to connected SSE clients after every
+// successful state transition.  Clients use it as a hint to re-fetch task
+// state via the REST API; the Detail field provides supplementary context.
+type SSEEvent struct {
+	TaskID    string          `json:"task_id"`
+	Event     TaskEventType   `json:"event"`
+	Detail    json.RawMessage `json:"detail,omitempty"`
+	Timestamp time.Time       `json:"timestamp"`
+}
+
+// EventSink receives SSE events emitted by the Store after writes.
+// Implementations must be non-blocking: if the downstream channel is full, the
+// event should be dropped rather than stalling the caller.
+type EventSink interface {
+	Emit(SSEEvent)
+}
 
 // ErrStoreClosing is returned when a write is attempted on a closing Store.
 var ErrStoreClosing = errors.New("store is closing")
@@ -29,6 +50,34 @@ type Store struct {
 	closeCh   chan struct{} // closed once by closeOnce to signal shutdown
 	done      chan struct{} // closed by writeLoop when it exits
 	closeOnce sync.Once
+
+	sinkMu sync.RWMutex
+	sink   EventSink // nil until SetEventSink is called
+}
+
+// SetEventSink registers an EventSink that receives an SSEEvent after every
+// successful state transition.  Safe to call from any goroutine.  Pass nil to
+// detach the current sink.
+func (s *Store) SetEventSink(sink EventSink) {
+	s.sinkMu.Lock()
+	s.sink = sink
+	s.sinkMu.Unlock()
+}
+
+// emit dispatches ev to the registered EventSink, if any.  Timestamp is set
+// here so callers only need to supply TaskID, Event, and optional Detail.
+// The call is non-blocking: the sink is required to implement non-blocking
+// delivery internally.
+func (s *Store) emit(ev SSEEvent) {
+	if ev.Timestamp.IsZero() {
+		ev.Timestamp = time.Now().UTC()
+	}
+	s.sinkMu.RLock()
+	sink := s.sink
+	s.sinkMu.RUnlock()
+	if sink != nil {
+		sink.Emit(ev)
+	}
 }
 
 // writeOp is a unit of work dispatched to the single write goroutine.

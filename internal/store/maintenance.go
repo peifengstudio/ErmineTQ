@@ -64,7 +64,8 @@ func (s *Store) FindStaleAttempts(ctx context.Context, cutoff time.Time) ([]*Att
 // timeouts from normal execution failures in the dashboard timeline.
 func (s *Store) TimeoutAttempt(ctx context.Context, attemptID string) error {
 	const errMsg = "heartbeat timeout"
-	return s.write(ctx, func(tx *sql.Tx) error {
+	var capturedTaskID string
+	err := s.write(ctx, func(tx *sql.Tx) error {
 		now := time.Now().UTC()
 		nowStr := fmtDBTime(now)
 
@@ -72,6 +73,7 @@ func (s *Store) TimeoutAttempt(ctx context.Context, attemptID string) error {
 		if err != nil {
 			return err
 		}
+		capturedTaskID = taskID
 
 		var retryCount, maxRetries int
 		if err := tx.QueryRow(
@@ -125,6 +127,11 @@ func (s *Store) TimeoutAttempt(ctx context.Context, attemptID string) error {
 
 		return insertTaskEvent(tx, taskID, TaskEventHeartbeatTimeout, detail, nowStr)
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: capturedTaskID, Event: TaskEventHeartbeatTimeout})
+	return nil
 }
 
 // DueSchedules returns all enabled schedules whose next_run_at is in the past

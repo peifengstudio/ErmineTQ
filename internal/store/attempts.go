@@ -48,13 +48,15 @@ func retryBackoff(retryCount int) time.Duration {
 //   - worker   current_task_count decremented
 //   - task_events ← 'succeeded' {attempt_id}
 func (s *Store) SucceedAttempt(ctx context.Context, attemptID string, result json.RawMessage) error {
-	return s.write(ctx, func(tx *sql.Tx) error {
+	var capturedTaskID string
+	err := s.write(ctx, func(tx *sql.Tx) error {
 		now := fmtDBTime(time.Now().UTC())
 
 		taskID, workerID, err := loadRunningAttempt(tx, attemptID)
 		if err != nil {
 			return err
 		}
+		capturedTaskID = taskID
 
 		if _, err := tx.Exec(`
 			UPDATE attempts
@@ -86,6 +88,11 @@ func (s *Store) SucceedAttempt(ctx context.Context, attemptID string, result jso
 		)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: capturedTaskID, Event: TaskEventSucceeded})
+	return nil
 }
 
 // FailAttempt records a failed execution outcome in a single transaction:
@@ -95,7 +102,9 @@ func (s *Store) SucceedAttempt(ctx context.Context, attemptID string, result jso
 //   - worker   current_task_count decremented
 //   - task_events ← 'retrying' or 'dead' with error and attempt_id
 func (s *Store) FailAttempt(ctx context.Context, attemptID, errMsg string) error {
-	return s.write(ctx, func(tx *sql.Tx) error {
+	var capturedTaskID string
+	var capturedEvent TaskEventType
+	err := s.write(ctx, func(tx *sql.Tx) error {
 		now := time.Now().UTC()
 		nowStr := fmtDBTime(now)
 
@@ -103,6 +112,7 @@ func (s *Store) FailAttempt(ctx context.Context, attemptID, errMsg string) error
 		if err != nil {
 			return err
 		}
+		capturedTaskID = taskID
 
 		var retryCount, maxRetries int
 		if err := tx.QueryRow(
@@ -158,6 +168,7 @@ func (s *Store) FailAttempt(ctx context.Context, attemptID, errMsg string) error
 			}
 		}
 
+		capturedEvent = eventType
 		_, err = tx.Exec(`
 			INSERT INTO task_events (id, task_id, event, detail, created_at)
 			VALUES (?, ?, ?, ?, ?)`,
@@ -165,6 +176,11 @@ func (s *Store) FailAttempt(ctx context.Context, attemptID, errMsg string) error
 		)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: capturedTaskID, Event: capturedEvent})
+	return nil
 }
 
 // CancelAttempt records a cancelled execution outcome in a single transaction:
@@ -173,13 +189,15 @@ func (s *Store) FailAttempt(ctx context.Context, attemptID, errMsg string) error
 //   - worker   current_task_count decremented
 //   - task_events ← 'cancelled' {attempt_id}
 func (s *Store) CancelAttempt(ctx context.Context, attemptID string) error {
-	return s.write(ctx, func(tx *sql.Tx) error {
+	var capturedTaskID string
+	err := s.write(ctx, func(tx *sql.Tx) error {
 		now := fmtDBTime(time.Now().UTC())
 
 		taskID, workerID, err := loadRunningAttempt(tx, attemptID)
 		if err != nil {
 			return err
 		}
+		capturedTaskID = taskID
 
 		if _, err := tx.Exec(`
 			UPDATE attempts SET status = 'cancelled', finished_at = ? WHERE id = ?`,
@@ -209,6 +227,11 @@ func (s *Store) CancelAttempt(ctx context.Context, attemptID string) error {
 		)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: capturedTaskID, Event: TaskEventCancelled})
+	return nil
 }
 
 // UpdateHeartbeat records that a running attempt is still alive by updating

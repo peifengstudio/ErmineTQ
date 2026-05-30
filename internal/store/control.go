@@ -19,11 +19,15 @@ var ErrInvalidTransition = errors.New("invalid state transition")
 //
 // Valid source state: running.
 func (s *Store) HaltTask(ctx context.Context, id string) error {
-	return s.controlTransition(ctx, id,
+	if err := s.controlTransition(ctx, id,
 		[]TaskStatus{TaskStatusRunning},
 		TaskStatusHalted,
 		TaskEventHalted,
-	)
+	); err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: id, Event: TaskEventHalted})
+	return nil
 }
 
 // ResumeTask transitions a halted task back to queued, resetting run_at to now
@@ -31,7 +35,7 @@ func (s *Store) HaltTask(ctx context.Context, id string) error {
 //
 // Valid source state: halted.
 func (s *Store) ResumeTask(ctx context.Context, id string) error {
-	return s.write(ctx, func(tx *sql.Tx) error {
+	err := s.write(ctx, func(tx *sql.Tx) error {
 		now := fmtDBTime(time.Now().UTC())
 
 		status, err := taskStatusTx(tx, id)
@@ -50,6 +54,11 @@ func (s *Store) ResumeTask(ctx context.Context, id string) error {
 		}
 		return insertTaskEvent(tx, id, TaskEventQueued, nil, now)
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: id, Event: TaskEventQueued})
+	return nil
 }
 
 // CancelTask transitions a queued or halted task to cancelled.
@@ -58,11 +67,15 @@ func (s *Store) ResumeTask(ctx context.Context, id string) error {
 //
 // Valid source states: queued, halted.
 func (s *Store) CancelTask(ctx context.Context, id string) error {
-	return s.controlTransition(ctx, id,
+	if err := s.controlTransition(ctx, id,
 		[]TaskStatus{TaskStatusQueued, TaskStatusHalted},
 		TaskStatusCancelled,
 		TaskEventCancelled,
-	)
+	); err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: id, Event: TaskEventCancelled})
+	return nil
 }
 
 // RetryTask transitions a dead or cancelled task back to queued, resetting
@@ -70,7 +83,7 @@ func (s *Store) CancelTask(ctx context.Context, id string) error {
 //
 // Valid source states: dead, cancelled.
 func (s *Store) RetryTask(ctx context.Context, id string) error {
-	return s.write(ctx, func(tx *sql.Tx) error {
+	err := s.write(ctx, func(tx *sql.Tx) error {
 		now := fmtDBTime(time.Now().UTC())
 
 		status, err := taskStatusTx(tx, id)
@@ -92,6 +105,11 @@ func (s *Store) RetryTask(ctx context.Context, id string) error {
 		}
 		return insertTaskEvent(tx, id, TaskEventQueued, nil, now)
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(SSEEvent{TaskID: id, Event: TaskEventQueued})
+	return nil
 }
 
 // RestartTask supersedes the original task and creates a new queued task that
@@ -178,6 +196,8 @@ func (s *Store) RestartTask(ctx context.Context, id string) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.emit(SSEEvent{TaskID: id, Event: TaskEventSuperseded})
+	s.emit(SSEEvent{TaskID: newTask.ID, Event: TaskEventQueued})
 	return newTask, nil
 }
 

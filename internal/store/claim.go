@@ -180,5 +180,8 @@ func (s *Store) ClaimTask(
 	if err != nil {
 		return nil, "", err
 	}
+	if claimed != nil {
+		s.emit(SSEEvent{TaskID: claimed.ID, Event: TaskEventStarted})
+	}
 	return claimed, claimedAttemptID, nil
 }

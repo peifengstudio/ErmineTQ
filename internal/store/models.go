@@ -82,6 +82,7 @@ const (
 	TaskEventHalted           TaskEventType = "halted"
 	TaskEventCancelled        TaskEventType = "cancelled"
 	TaskEventHeartbeatTimeout TaskEventType = "heartbeat_timeout"
+	TaskEventSuperseded       TaskEventType = "superseded"
 )
 
 // TaskEvent records a state-transition point used by the dashboard timeline
