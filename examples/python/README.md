@@ -1,42 +1,53 @@
-# Python Examples
+# Python SDK Examples
+
+Demonstrates the ErmineTQ Python SDK (`sdk/python/`) with four example task handlers.
 
 ## Setup
 
 ```bash
 cd examples/python
-uv sync          # installs httpx
+uv sync          # installs erminetq SDK + httpx
 ```
 
-## bridge/main.py — Python Bridge server
+## Running
 
-Listens on a Unix socket, registers itself with ErmineTQ, and dispatches
-incoming tasks to Python handlers.
+Three terminals:
 
 ```bash
-# default: connects to http://localhost:8081, socket /tmp/erminetq_bridge.sock
-uv run python bridge/main.py
+# Terminal 1 — Go server
+make dev
 
-# custom:
-ERMINETQ_URL=http://localhost:8080 \
-BRIDGE_SOCKET=/tmp/my_bridge.sock \
-uv run python bridge/main.py
+# Terminal 2 — Python pull worker (polls /api/worker/claim)
+make example-py-worker
+
+# Terminal 3 — submit tasks and wait for results
+make example-py-submit
 ```
 
-## submit.py — submit Python tasks
+Or without Make:
 
 ```bash
-uv run python submit.py
-uv run python submit.py --addr http://localhost:8081
+# Terminal 2
+cd examples/python
+ERMINETQ_URL=http://localhost:8080 uv run python worker.py
+
+# Terminal 3
+cd examples/python
+uv run python submit.py --addr http://localhost:8080
 ```
 
-## Handlers
+## Files
 
-| File | Task type | Library |
-|---|---|---|
-| `handlers/http_fetch.py` | `py_http_fetch` | `httpx` |
-| `handlers/file_io.py` | `py_file_write`, `py_file_read` | stdlib `pathlib` |
-| `handlers/ollama.py` | `py_ollama_chat` | `httpx` → Ollama API |
+| File | Purpose |
+|---|---|
+| `worker.py` | Pull worker — registers handlers, polls ErmineTQ, executes tasks |
+| `submit.py` | Submits example tasks and waits for results |
+| `handlers/http_fetch.py` | `py_http_fetch` — fetch a URL via httpx |
+| `handlers/file_io.py` | `py_file_write`, `py_file_read` — stdlib pathlib |
+| `handlers/ollama.py` | `py_ollama_chat` — local Ollama inference |
 
-To add a new handler:
-1. Create `handlers/my_handler.py` with `def handle_my_task(task_id, payload) -> dict`
+## Adding a new handler
+
+1. Create `handlers/my_handler.py` with `def handle_my_task(payload: dict) -> dict`
 2. Register it in `handlers/__init__.py`: `HANDLERS["my_task_type"] = handle_my_task`
+3. Restart `worker.py` — it will advertise the new type to ErmineTQ on next register

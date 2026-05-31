@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peifengstudio/erminetq/internal/config"
 	"github.com/peifengstudio/erminetq/internal/store"
 )
 
@@ -28,7 +29,7 @@ func startBroker(t *testing.T) *Broker {
 
 func TestHandleEvents_ReceivesEvent(t *testing.T) {
 	broker := startBroker(t)
-	handler := NewHandler(&mockStore{}, broker)
+	handler := NewHandler(&mockStore{}, broker, &config.Config{})
 
 	srv := httptest.NewServer(http.HandlerFunc(handler.HandleEvents))
 	t.Cleanup(srv.Close)
@@ -76,7 +77,7 @@ func TestHandleEvents_ReceivesEvent(t *testing.T) {
 
 func TestHandleEvents_UnsubscribeOnDisconnect(t *testing.T) {
 	broker := startBroker(t)
-	handler := NewHandler(&mockStore{}, broker)
+	handler := NewHandler(&mockStore{}, broker, &config.Config{})
 
 	srv := httptest.NewServer(http.HandlerFunc(handler.HandleEvents))
 	t.Cleanup(srv.Close)

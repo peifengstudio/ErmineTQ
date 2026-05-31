@@ -109,7 +109,7 @@ func run() error {
 	defer sched.Wait()
 
 	// ── HTTP API ──────────────────────────────────────────────────────────────
-	handler := api.NewHandler(s, broker)
+	handler := api.NewHandler(s, broker, cfg)
 	mux := http.NewServeMux()
 	handler.Register(mux)
 

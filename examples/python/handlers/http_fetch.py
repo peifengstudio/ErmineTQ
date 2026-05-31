@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from pathlib import Path
 
 import httpx
@@ -12,10 +13,10 @@ OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
 logger = logging.getLogger(__name__)
 
 
-def handle_http_fetch(task_id: str, payload: dict) -> dict:
+def handle_http_fetch(payload: dict) -> dict:
     """
     Payload: {"url": "https://httpbin.org/json", "timeout_secs": 10}
-    Output:  examples/output/py_http_fetch_<task_id>.json
+    Output:  examples/output/py_http_fetch_<uid>.json
     """
     url = payload.get("url")
     if not url:
@@ -30,19 +31,17 @@ def handle_http_fetch(task_id: str, payload: dict) -> dict:
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
-    body_preview = resp.text[:500]
-
     output = {
         "url": url,
         "status_code": resp.status_code,
         "content_type": resp.headers.get("content-type", ""),
         "body_bytes": len(resp.content),
-        "body_preview": body_preview,
+        "body_preview": resp.text[:500],
         "elapsed_ms": elapsed_ms,
     }
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUTPUT_DIR / f"py_http_fetch_{task_id}.json"
+    out_path = OUTPUT_DIR / f"py_http_fetch_{uuid.uuid4().hex[:8]}.json"
     out_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
 
     logger.info("saved → %s (status=%d, %dms)", out_path, resp.status_code, elapsed_ms)

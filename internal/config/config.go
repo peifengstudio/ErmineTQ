@@ -30,7 +30,6 @@ const DefaultGlobalLimit = 128
 type Config struct {
 	DB        DBConfig                  `toml:"db"`
 	Limits    LimitsConfig              `toml:"limits"`
-	Bridge    BridgeConfig              `toml:"bridge"`
 	Queues    map[string]QueueConfig    `toml:"queues"`
 	TaskTypes map[string]TaskTypeConfig `toml:"task_types"`
 }
@@ -53,20 +52,6 @@ type LimitsConfig struct {
 	// Global is the maximum number of tasks that may run concurrently
 	// across all queues. Must be >= 1. Default: 128.
 	Global int `toml:"global"`
-}
-
-// BridgeConfig configures the Python Bridge integration.
-// The bridge is optional: if Socket is empty the bridge is disabled and no
-// Python tasks will be dispatched via the socket client.
-type BridgeConfig struct {
-	// Socket is the Unix domain socket path that the Python Bridge server
-	// listens on. Empty string disables the bridge.
-	Socket string `toml:"socket"`
-
-	// TaskTypes lists the task types that should be routed to the Python
-	// Bridge. In v0.1 this is a static list; future versions will discover
-	// types dynamically from the connected bridge process.
-	TaskTypes []string `toml:"task_types"`
 }
 
 // QueueConfig defines the execution limit for one named queue.
@@ -175,6 +160,7 @@ func defaults() *Config {
 		TaskTypes: make(map[string]TaskTypeConfig),
 	}
 }
+
 
 func (c *Config) validate() error {
 	if c.Limits.Global < 1 {

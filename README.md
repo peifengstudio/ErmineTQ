@@ -1,7 +1,7 @@
 # ErmineTQ
 
 A single-binary task queue and job runner for local Python services.  
-Go engine · SQLite WAL · embedded Dashboard · Python Bridge over Unix socket.
+Go engine · SQLite WAL · embedded Dashboard · Python SDK (pull worker).
 
 **Status: v0.1 — under active development**
 
@@ -38,11 +38,21 @@ cp erminetq.example.toml erminetq.toml
 ```
 
 ```python
-from erminetq import ErmineTQClient
+from erminetq import Client, Worker
 
-client  = ErmineTQClient("http://localhost:8080")
-task_id = client.submit("my_task", {"key": "value"})
-result  = client.wait(task_id)
+# Submit tasks
+with Client("http://localhost:8080") as client:
+    task_id = client.submit("send_email", {"to": "alice@example.com"})
+
+# Run a worker
+worker = Worker("http://localhost:8080", concurrency=4)
+
+@worker.register("send_email")
+def send_email(payload: dict) -> dict:
+    ...
+    return {"sent": True}
+
+worker.run()  # blocks; Ctrl+C for graceful shutdown
 ```
 
 ---
@@ -152,7 +162,7 @@ Flags (server / migrate):
 
 ### Prerequisites
 
-- Go 1.25+  (`mise install` if you use [mise](https://mise.jdx.dev))
+- Go 1.25+, Python 3.11+, uv — run `mise install` if you use [mise](https://mise.jdx.dev)
 - `golangci-lint` for linting (optional)
 - `air` for hot-reload dev: `go install github.com/air-verse/air@latest`
 
@@ -170,10 +180,15 @@ make test-store   # run only internal/store tests
 make test-cover   # generate + open HTML coverage report
 make lint         # golangci-lint
 make fmt          # gofmt in-place
-make tidy         # go mod tidy
-make clean        # remove bin/ and coverage.out
-make clean-db     # remove local *.db files
-make help         # list all targets
+make tidy          # go mod tidy
+make clean         # remove bin/ and coverage.out
+make clean-db      # remove local *.db files
+make help          # list all targets
+
+# Python SDK examples — server must be running first (make dev)
+make example-py-worker  # Terminal 2: start Python pull worker
+make example-py-submit  # Terminal 3: submit example tasks and print results
+make example-submit     # Go-only: submit Go handler tasks
 ```
 
 Use env vars with any make target:
@@ -196,8 +211,8 @@ ERMINETQ_DB=./data/dev.db make migrate
 ┌────────────▼────────────────────────────────────────┐
 │  Go Engine                                          │
 │  HTTP Router → Task Queue → Worker Pool             │
-│       ├── Go Worker  (goroutine)                    │
-│       └── Python Bridge (Unix socket → py pool)     │
+│       └── Go Worker  (goroutine)                    │
+│  Pull Worker API  (/api/worker/claim + report)      │
 │  Retry Scheduler + Heartbeat Scanner                │
 │  Cron Scheduler (schedules → tasks)                 │
 │  SQLite WAL (single file, single writer goroutine)  │
@@ -207,11 +222,14 @@ ERMINETQ_DB=./data/dev.db make migrate
 │  Dashboard (Tailwind + Alpine.js, fully embedded)   │
 │  Overview · Tasks · Task Detail · Workers · Schedules│
 └─────────────────────────────────────────────────────┘
+
+Python SDK worker (separate process, any machine on the same network)
+  poll → POST /api/worker/claim → execute handler → POST /api/worker/attempts/{id}/succeed|fail
 ```
 
 - **Go Engine** — HTTP API, task queue, worker pool, scheduler, heartbeat scanner
 - **SQLite WAL** — single-file storage, zero external dependencies, single write goroutine
-- **Python Bridge** — long-lived Python process pool reached over a Unix socket
+- **Python SDK** — pull worker: polls `/api/worker/claim`, executes handlers, reports results; no Unix socket or persistent connection needed
 - **Dashboard** — Tailwind + Alpine.js UI compiled into `dashboard/dist/` and embedded into the binary via `embed.FS`
 
 See [docs/DESIGN.md](docs/DESIGN.md) for full design rationale.
@@ -226,10 +244,12 @@ internal/config/      TOML config loader and execution-limit types
 internal/store/       SQLite store layer — ALL state transitions go here
 internal/queue/       in-memory priority queue + worker pool
 internal/api/         HTTP JSON API handlers and types
-internal/bridge/      Python Bridge Unix socket client
 internal/scheduler/   cron + interval scheduler
 internal/dashboard/   HTTP server + SSE broker + embedded static files
 dashboard/dist/       frontend build output (embedded into binary)
+sdk/python/           Python SDK (erminetq package — Client + Worker)
+examples/go/          Go example handlers and task submit script
+examples/python/      Python SDK worker and task submit script
 docs/                 design documents
 erminetq.example.toml annotated reference configuration
 ```
@@ -252,6 +272,14 @@ restart: original → superseded, new task queued with parent_id
 
 ---
 
-## Related
+## Python SDK
 
-- [erminetq-python](https://github.com/peifengstudio/erminetq-python) — Python SDK
+The SDK lives in [`sdk/python/`](sdk/python/) and is installable as a path dependency:
+
+```bash
+# via uv (recommended)
+uv add erminetq --path ./sdk/python
+
+# via pip
+pip install -e ./sdk/python
+```

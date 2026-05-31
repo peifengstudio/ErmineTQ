@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from pathlib import Path
 
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
 logger = logging.getLogger(__name__)
 
 
-def handle_file_write(task_id: str, payload: dict) -> dict:
+def handle_file_write(payload: dict) -> dict:
     """
     Write (or append) text to a file under examples/output/.
 
@@ -35,12 +36,11 @@ def handle_file_write(task_id: str, payload: dict) -> dict:
     return {"path": str(out_path), "bytes_written": bytes_written, "mode": mode}
 
 
-def handle_file_read(task_id: str, payload: dict) -> dict:
+def handle_file_read(payload: dict) -> dict:
     """
     Read a file and write a log copy to examples/output/.
 
     Payload: {"path": "examples/output/hello.txt", "max_bytes": 65536}
-    Output:  examples/output/py_file_read_<task_id>.txt
     """
     path_str = payload.get("path")
     if not path_str:
@@ -64,7 +64,7 @@ def handle_file_read(task_id: str, payload: dict) -> dict:
     )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUTPUT_DIR / f"py_file_read_{task_id}.txt"
+    out_path = OUTPUT_DIR / f"py_file_read_{uuid.uuid4().hex[:8]}.txt"
     out_path.write_text(log_content, encoding="utf-8")
 
     logger.info("read %d bytes from %s → log at %s", len(raw), file_path, out_path)

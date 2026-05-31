@@ -97,9 +97,9 @@ tidy: ## Tidy go.mod and go.sum
 #   Terminal 1: make dev
 #   Terminal 2: make example-submit
 #
-# Python Bridge example:
+# Python SDK example:
 #   Terminal 1: make dev
-#   Terminal 2: make example-bridge
+#   Terminal 2: make example-py-worker
 #   Terminal 3: make example-py-submit
 
 EXAMPLE_SERVER ?= http://localhost:8080
@@ -110,14 +110,14 @@ example-submit: ## Submit Go example tasks to the dev server (make dev must be r
 	  { echo "✗ server not running — start it first: make dev"; exit 1; }
 	go run ./examples/go/submit -addr $(EXAMPLE_SERVER)
 
-.PHONY: example-bridge
-example-bridge: ## Start the Python Bridge against the dev server (make dev must be running)
+.PHONY: example-py-worker
+example-py-worker: ## Start the Python SDK worker (make dev must be running)
 	@curl -sf $(EXAMPLE_SERVER)/api/workers > /dev/null 2>&1 || \
 	  { echo "✗ server not running — start it first: make dev"; exit 1; }
-	cd examples/python && ERMINETQ_URL=$(EXAMPLE_SERVER) uv run python bridge/main.py
+	cd examples/python && ERMINETQ_URL=$(EXAMPLE_SERVER) uv run python worker.py
 
 .PHONY: example-py-submit
-example-py-submit: ## Submit Python Bridge tasks to the dev server
+example-py-submit: ## Submit Python SDK tasks to the dev server
 	@curl -sf $(EXAMPLE_SERVER)/api/workers > /dev/null 2>&1 || \
 	  { echo "✗ server not running — start it first: make dev"; exit 1; }
 	cd examples/python && uv run python submit.py --addr $(EXAMPLE_SERVER)

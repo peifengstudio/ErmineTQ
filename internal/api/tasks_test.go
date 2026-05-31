@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peifengstudio/erminetq/internal/config"
 	"github.com/peifengstudio/erminetq/internal/store"
 )
 
@@ -69,10 +70,21 @@ func (m *mockStore) UpdateSchedule(ctx context.Context, id string, in store.Upda
 	return m.updateScheduleFn(ctx, id, in)
 }
 
+// Pull-worker stubs — not exercised by existing task/schedule tests.
+func (m *mockStore) ClaimTask(ctx context.Context, workerID, queue string, taskTypes []string, cfg *config.Config) (*store.Task, string, error) {
+	return nil, "", nil
+}
+func (m *mockStore) SucceedAttempt(ctx context.Context, attemptID string, result json.RawMessage) error {
+	return nil
+}
+func (m *mockStore) FailAttempt(ctx context.Context, attemptID, errMsg string) error {
+	return nil
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func newTestHandler(ms *mockStore) *Handler {
-	return NewHandler(ms, NewBroker())
+	return NewHandler(ms, NewBroker(), &config.Config{})
 }
 
 func postJSON(t *testing.T, h http.Handler, path string, body any) *httptest.ResponseRecorder {

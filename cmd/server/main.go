@@ -13,7 +13,6 @@ import (
 
 	"github.com/peifengstudio/erminetq/examples/go/handlers"
 	"github.com/peifengstudio/erminetq/internal/api"
-	"github.com/peifengstudio/erminetq/internal/bridge"
 	"github.com/peifengstudio/erminetq/internal/config"
 	"github.com/peifengstudio/erminetq/internal/queue"
 	"github.com/peifengstudio/erminetq/internal/scheduler"
@@ -83,22 +82,12 @@ func cmdServer(args []string) error {
 
 	slog.Info("database ready", "db", dbPath)
 
-	// ── Task registry + Python Bridge ─────────────────────────────────────────
+	// ── Task registry ─────────────────────────────────────────────────────────
 	registry := queue.NewRegistry()
 
 	// Register built-in example handlers.  Call registry.Register with the same
 	// task type after this line to override any individual handler.
 	handlers.RegisterDefaults(registry)
-
-	if cfg.Bridge.Socket != "" {
-		bridgeClient := bridge.NewClient(cfg.Bridge.Socket)
-		defer bridgeClient.Close()
-		registry.SetBridge(bridgeClient, cfg.Bridge.TaskTypes)
-		slog.Info("bridge configured",
-			"socket", cfg.Bridge.Socket,
-			"types", cfg.Bridge.TaskTypes,
-		)
-	}
 
 	// ── SSE broker ────────────────────────────────────────────────────────────
 	broker := api.NewBroker()
@@ -135,19 +124,7 @@ func cmdServer(args []string) error {
 	sched.Start(ctx)
 
 	// ── HTTP API ──────────────────────────────────────────────────────────────
-	handler := api.NewHandler(s, broker)
-
-	// When a Python Bridge calls POST /api/workers/register, automatically
-	// wire its socket into the registry so the worker pool starts claiming
-	// python task types on the next poll cycle.
-	handler.SetBridgeRegistrar(func(socketPath string, taskTypes []string) {
-		bc := bridge.NewClient(socketPath)
-		registry.SetBridge(bc, taskTypes)
-		slog.Info("python bridge connected",
-			"socket", socketPath,
-			"types", taskTypes,
-		)
-	})
+	handler := api.NewHandler(s, broker, cfg)
 
 	mux := http.NewServeMux()
 	handler.Register(mux)
