@@ -24,18 +24,51 @@ deps: ## Download all Go module dependencies into the local cache
 	go mod verify
 	@echo "Dependencies ready"
 
+.PHONY: deps-ui
+deps-ui: ## Install dashboard npm dependencies
+	cd dashboard && pnpm install
+
+# ── Dashboard ──────────────────────────────────────────────────────────────────
+
+.PHONY: ui-dev
+ui-dev: ## Start Vite dev server for the dashboard (proxies /api → :8080)
+	cd dashboard && pnpm run dev
+
+.PHONY: ui-build
+ui-build: ## Build the dashboard into dashboard/dist/ (embedded into the binary)
+	cd dashboard && pnpm run build
+	@echo "Dashboard built → dashboard/dist/"
+
+.PHONY: ui-preview
+ui-preview: ui-build ## Build the dashboard and preview the production bundle
+	cd dashboard && pnpm run preview
+
+.PHONY: ui-fmt
+ui-fmt: ## Format dashboard source files with Prettier
+	cd dashboard && pnpm run fmt
+
+.PHONY: ui-fmt-check
+ui-fmt-check: ## Check dashboard formatting (non-destructive, for CI)
+	cd dashboard && pnpm run fmt:check
+
 # ── Build ──────────────────────────────────────────────────────────────────────
 
 .PHONY: build
-build: ## Build the binary to bin/erminetq
+build: ui-build ## Build dashboard then compile the Go binary to bin/erminetq
 	@mkdir -p bin
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built $(BINARY) ($(VERSION))"
 
 .PHONY: build-release
-build-release: ## Build a stripped release binary
+build-release: ui-build ## Build dashboard then compile a stripped release binary
 	@mkdir -p bin
 	go build -ldflags "$(LDFLAGS) -s -w" -o $(BINARY) $(CMD)
+
+.PHONY: build-go
+build-go: ## Build only the Go binary (skip dashboard build)
+	@mkdir -p bin
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "Built $(BINARY) ($(VERSION))"
 
 # ── Run ────────────────────────────────────────────────────────────────────────
 

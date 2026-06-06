@@ -1,0 +1,47 @@
+/* ─── Tailwind CSS v4 ────────────────────────────────────────────────────────
+   Loaded after tokens.css so @theme inline can reference --var() values.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+@import 'tailwindcss';
+
+/* Map design tokens to Tailwind theme so utilities like bg-bg-elev,
+   text-text-muted, border-border-strong, etc. are available.           */
+@theme inline {
+  /* Backgrounds */
+  --color-bg: var(--bg);
+  --color-bg-elev: var(--bg-elev);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-sunken: var(--bg-sunken);
+
+  /* Borders */
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  /* Text */
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+
+  /* Accent */
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-strong: var(--accent-strong);
+
+  /* Status */
+  --color-st-queued: var(--st-queued);
+  --color-st-running: var(--st-running);
+  --color-st-retrying: var(--st-retrying);
+  --color-st-succeeded: var(--st-succeeded);
+  --color-st-dead: var(--st-dead);
+  --color-st-halted: var(--st-halted);
+  --color-st-cancelled: var(--st-cancelled);
+  --color-st-superseded: var(--st-superseded);
+
+  /* Typography */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  /* Shadows */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+}

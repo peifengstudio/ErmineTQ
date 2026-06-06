@@ -27,9 +27,12 @@ erminetq.toml
 .DS_Store
 Thumbs.db
 
-# Dashboard build
+# Dashboard build output
 dashboard/dist/*
 !dashboard/dist/.gitkeep
+
+# Dashboard dependencies
+dashboard/node_modules/
 
 # Example output files (keep the .gitkeep placeholder)
 examples/output/*
@@ -47,3 +50,4 @@ examples/python/uv.lock
 
 # Development
 TODO.md
+*.plan.md
