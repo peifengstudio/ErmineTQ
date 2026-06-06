@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [tailwindcss(), react()],
   base: './',
   build: {
-    outDir: 'dist',
+    // Output to internal/dashboard/dist so Go's embed.FS can reference it
+    // directly from internal/dashboard/embed.go without needing ../
+    outDir: '../internal/dashboard/dist',
     emptyOutDir: true,
     // Inline assets up to 100 KB to reduce the number of files embedded in binary
     assetsInlineLimit: 102400,

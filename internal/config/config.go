@@ -161,7 +161,6 @@ func defaults() *Config {
 	}
 }
 
-
 func (c *Config) validate() error {
 	if c.Limits.Global < 1 {
 		return fmt.Errorf("limits.global must be >= 1, got %d", c.Limits.Global)

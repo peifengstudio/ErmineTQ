@@ -27,9 +27,9 @@ erminetq.toml
 .DS_Store
 Thumbs.db
 
-# Dashboard build output
-dashboard/dist/*
-!dashboard/dist/.gitkeep
+# Dashboard build output (written by Vite into internal/dashboard/dist/)
+internal/dashboard/dist/*
+!internal/dashboard/dist/.gitkeep
 
 # Dashboard dependencies
 dashboard/node_modules/

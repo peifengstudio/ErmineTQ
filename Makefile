@@ -35,9 +35,9 @@ ui-dev: ## Start Vite dev server for the dashboard (proxies /api → :8080)
 	cd dashboard && pnpm run dev
 
 .PHONY: ui-build
-ui-build: ## Build the dashboard into dashboard/dist/ (embedded into the binary)
+ui-build: ## Build the dashboard into internal/dashboard/dist/ (embedded into the binary)
 	cd dashboard && pnpm run build
-	@echo "Dashboard built → dashboard/dist/"
+	@echo "Dashboard built → internal/dashboard/dist/"
 
 .PHONY: ui-preview
 ui-preview: ui-build ## Build the dashboard and preview the production bundle

@@ -158,11 +158,82 @@ Flags (server / migrate):
 
 ---
 
+## Dashboard
+
+The embedded dashboard is a React SPA (Vite + Tailwind CSS v4 + Font Awesome).
+It is compiled into `internal/dashboard/dist/` and embedded into the binary
+via `go:embed`, so no separate web server is needed.
+
+Open **http://localhost:8080** after starting the server.
+
+### Dashboard development workflow
+
+Two terminals, one command each:
+
+```bash
+# Terminal 1 — Go backend (hot-reload or plain run)
+make dev          # or: make run
+
+# Terminal 2 — Vite dev server with HMR (proxies /api → :8080)
+make ui-dev       # opens http://localhost:5173
+```
+
+The Vite dev server proxies all `/api/*` requests to the Go backend at `:8080`,
+so you get instant hot-module-replacement on the frontend while the real API
+responds normally.
+
+### Dashboard build commands
+
+```bash
+make deps-ui      # install npm dependencies (pnpm, Node 25+)
+make ui-build     # compile dashboard → internal/dashboard/dist/
+make ui-preview   # build + preview production bundle at :5174
+make ui-fmt       # format all src/**/*.{ts,tsx,css} with Prettier
+make ui-fmt-check # check formatting (exit non-zero if unformatted — CI)
+make build        # ui-build → go build (full binary, dashboard included)
+make build-go     # go build only (skips ui-build, for rapid Go iteration)
+```
+
+> **Note:** `make build` always rebuilds the dashboard first. Use `make build-go`
+> when you only changed Go code and the frontend is already up to date.
+
+### Dashboard tech stack
+
+| Layer | Tool |
+|-------|------|
+| Framework | React 18 + TypeScript |
+| Build | Vite 6 |
+| Styles | CSS custom properties (design tokens) + Tailwind CSS v4 |
+| Icons | Font Awesome 6 (free-solid + free-regular) |
+| Fonts | Inter + JetBrains Mono (self-hosted via `@fontsource`) |
+| Format | Prettier 3 + `prettier-plugin-tailwindcss` |
+| Runtime | Node 25 + pnpm 10 (managed by mise) |
+
+### How it is embedded
+
+```
+dashboard/src/           React source
+      ↓ pnpm run build
+internal/dashboard/dist/ compiled assets (gitignored, except .gitkeep)
+      ↓ //go:embed all:dist
+internal/dashboard/      Go package — Handler() serves the SPA
+      ↓ mux.Handle("/", dashboard.Handler())
+cmd/server/main.go       wired after /api/* routes
+```
+
+- `/api/*` requests are handled by the API layer and never reach the dashboard handler.
+- Any other path either serves a matching static asset or falls back to `index.html`
+  so the React router handles client-side navigation.
+- `index.html` is served with `Cache-Control: no-cache` so new binary deployments
+  are picked up immediately.
+
+---
+
 ## Development
 
 ### Prerequisites
 
-- Go 1.25+, Python 3.11+, uv — run `mise install` if you use [mise](https://mise.jdx.dev)
+- Go 1.25+, Python 3.11+, uv, Node 25+, pnpm 10 — run `mise install`
 - `golangci-lint` for linting (optional)
 - `air` for hot-reload dev: `go install github.com/air-verse/air@latest`
 
@@ -170,7 +241,9 @@ Flags (server / migrate):
 
 ```bash
 make deps         # download all Go module dependencies
-make build        # compile → bin/erminetq
+make deps-ui      # install dashboard npm dependencies
+make build        # build dashboard + compile → bin/erminetq
+make build-go     # compile Go only (skip dashboard build)
 make dev          # hot-reload server via air (requires air)
 make run          # run server once via go run
 make migrate      # apply migrations and exit
@@ -180,10 +253,16 @@ make test-store   # run only internal/store tests
 make test-cover   # generate + open HTML coverage report
 make lint         # golangci-lint
 make fmt          # gofmt in-place
-make tidy          # go mod tidy
-make clean         # remove bin/ and coverage.out
-make clean-db      # remove local *.db files
-make help          # list all targets
+make tidy         # go mod tidy
+make clean        # remove bin/ and coverage.out
+make clean-db     # remove local *.db files
+make help         # list all targets
+
+# Dashboard
+make ui-dev       # Vite HMR dev server (proxy → :8080)
+make ui-build     # production build → internal/dashboard/dist/
+make ui-fmt       # Prettier format
+make ui-fmt-check # Prettier check (CI)
 
 # Python SDK examples — server must be running first (make dev)
 make example-py-worker  # Terminal 2: start Python pull worker
@@ -230,7 +309,7 @@ Python SDK worker (separate process, any machine on the same network)
 - **Go Engine** — HTTP API, task queue, worker pool, scheduler, heartbeat scanner
 - **SQLite WAL** — single-file storage, zero external dependencies, single write goroutine
 - **Python SDK** — pull worker: polls `/api/worker/claim`, executes handlers, reports results; no Unix socket or persistent connection needed
-- **Dashboard** — Tailwind + Alpine.js UI compiled into `dashboard/dist/` and embedded into the binary via `embed.FS`
+- **Dashboard** — React + Tailwind CSS v4 + Font Awesome SPA compiled into `internal/dashboard/dist/` and embedded into the binary via `embed.FS`; served at `/` with SPA fallback
 
 See [docs/DESIGN.md](docs/DESIGN.md) for full design rationale.
 
@@ -245,8 +324,9 @@ internal/store/       SQLite store layer — ALL state transitions go here
 internal/queue/       in-memory priority queue + worker pool
 internal/api/         HTTP JSON API handlers and types
 internal/scheduler/   cron + interval scheduler
-internal/dashboard/   HTTP server + SSE broker + embedded static files
-dashboard/dist/       frontend build output (embedded into binary)
+internal/dashboard/   embedded SPA handler (embed.go) + SSE broker
+internal/dashboard/dist/ frontend build output (gitignored; produced by make ui-build)
+dashboard/            React/Vite frontend source (src/, vite.config.ts, package.json)
 sdk/python/           Python SDK (erminetq package — Client + Worker)
 examples/go/          Go example handlers and task submit script
 examples/python/      Python SDK worker and task submit script

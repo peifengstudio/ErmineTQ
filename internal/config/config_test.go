@@ -270,4 +270,3 @@ func TestConfigFilePath_DefaultFallback(t *testing.T) {
 		t.Errorf("default fallback: want %q, got %q", config.DefaultConfigPath, got)
 	}
 }
-

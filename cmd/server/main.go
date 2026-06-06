@@ -14,6 +14,7 @@ import (
 	"github.com/peifengstudio/erminetq/examples/go/handlers"
 	"github.com/peifengstudio/erminetq/internal/api"
 	"github.com/peifengstudio/erminetq/internal/config"
+	"github.com/peifengstudio/erminetq/internal/dashboard"
 	"github.com/peifengstudio/erminetq/internal/queue"
 	"github.com/peifengstudio/erminetq/internal/scheduler"
 	"github.com/peifengstudio/erminetq/internal/store"
@@ -128,6 +129,11 @@ func cmdServer(args []string) error {
 
 	mux := http.NewServeMux()
 	handler.Register(mux)
+
+	// ── Dashboard (SPA, catch-all — must be registered last) ─────────────────
+	// All /api/* routes are already registered above and take precedence.
+	// Any other request (including /) is handled by the embedded React app.
+	mux.Handle("/", dashboard.Handler())
 
 	srv := api.NewServer(addr, mux)
 	if err := srv.Start(); err != nil {
