@@ -1,27 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useLivePill } from '../../hooks/useLivePill'
 
 interface LivePillProps {
-  /** Timestamp of the last received SSE event (ms). Pass Date.now() on each event. */
-  lastEventAt: number
+  /** Date.now() of the last SSE event. Pass null when not yet connected. */
+  lastEventAt: number | null
 }
 
 /**
  * LivePill — "Live · updated Ns ago" indicator.
- * Green pulsing dot; counter ticks every second.
+ * Green pulsing dot when connected; grey "Connecting…" when not.
  */
 export function LivePill({ lastEventAt }: LivePillProps) {
-  const [elapsed, setElapsed] = useState(0)
+  const elapsed = useLivePill(lastEventAt)
 
-  useEffect(() => {
-    setElapsed(0)
-    const id = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - lastEventAt) / 1000))
-    }, 1000)
-    return () => clearInterval(id)
-  }, [lastEventAt])
+  if (elapsed === null) {
+    return (
+      <span className="live-pill">
+        <span className="dot" style={{ background: 'var(--text-subtle)', animation: 'none' }} />
+        Connecting…
+      </span>
+    )
+  }
 
   const label = elapsed === 0 ? 'just now' : `${elapsed}s ago`
-
   return (
     <span className="live-pill">
       <span className="dot" />
